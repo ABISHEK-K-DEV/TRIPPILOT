@@ -77,3 +77,20 @@ describe('auth guard', () => {
     expect((await request(app).get('/api/trips')).status).toBe(401);
   });
 });
+
+describe('destination filters (regressions)', () => {
+  it('excludes avoid-months even when a climate filter is set', async () => {
+    const res = await request(app).get('/api/destinations').query({ month: 7, climate: 'warm' });
+    expect(res.status).toBe(200);
+    expect(res.body.destinations.map((d: { slug: string }) => d.slug)).not.toContain('goa'); // Goa: avoid Jun–Aug
+  });
+  it('treats weekend=false as no weekend filter', async () => {
+    const all = await request(app).get('/api/destinations');
+    const res = await request(app).get('/api/destinations').query({ weekend: 'false' });
+    expect(res.body.total).toBe(all.body.total);
+  });
+  it('rejects impossible dates', async () => {
+    const res = await request(app).post('/api/planner/plan').send({ ...body, startDate: '2026-02-27', endDate: '2026-02-30' });
+    expect(res.status).toBe(400);
+  });
+});

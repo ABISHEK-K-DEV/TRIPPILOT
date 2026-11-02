@@ -3,7 +3,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function parseIsoDate(date: string): number {
   if (!DATE_RE.test(date)) throw new Error(`Invalid date "${date}" (expected YYYY-MM-DD)`);
   const ms = Date.parse(`${date}T00:00:00Z`);
-  if (Number.isNaN(ms)) throw new Error(`Invalid date "${date}"`);
+  // Round-trip check rejects dates JS would silently roll over (2026-02-30 → 2026-03-02).
+  if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== date) throw new Error(`Invalid date "${date}"`);
   return ms;
 }
 

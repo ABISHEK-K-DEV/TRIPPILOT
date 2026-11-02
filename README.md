@@ -77,7 +77,7 @@ Open **http://localhost:5173**. The seed creates a local demo account: `demo@tri
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | All tests: 40 shared, 216 API and 6 web |
+| `npm test` | All tests: 43 shared, 219 API and 8 web |
 | `npm run typecheck` | TypeScript across all workspaces |
 | `npm run build` | Production builds (`apps/api/dist`, `apps/web/dist`) |
 | `npm run db:seed` | Re-seed sample data (idempotent) |

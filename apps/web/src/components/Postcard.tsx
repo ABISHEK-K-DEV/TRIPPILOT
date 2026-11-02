@@ -8,7 +8,7 @@ import type { SceneKind } from '@trippilot/shared';
 export function Postcard({
   scene, palette, imageUrl, alt, className = '',
 }: { scene: SceneKind; palette: [string, string, string]; imageUrl?: string | null; alt: string; className?: string }) {
-  const id = useId().replace(/:/g, '');
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   if (imageUrl) return <img src={imageUrl} alt={alt} loading="lazy" className={`object-cover ${className}`} />;
   const [a, b, c] = palette;
   return (

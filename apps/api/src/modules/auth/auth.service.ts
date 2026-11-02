@@ -16,6 +16,7 @@ export async function registerUser(input: RegisterInput): Promise<User> {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) throw conflict('An account with this email already exists');
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+  // The unique index is the real guard against races; the error handler maps P2002 to 409.
   return prisma.user.create({
     data: {
       email: input.email,

@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Coordinates, ItineraryDay } from '@trippilot/shared';
 
 /**
@@ -5,6 +6,7 @@ import type { Coordinates, ItineraryDay } from '@trippilot/shared';
  * Provider-backed interactive maps replace this in Milestone 2.
  */
 export function RouteSketch({ day, base, baseLabel }: { day: ItineraryDay; base: Coordinates; baseLabel: string }) {
+  const gridId = `grid${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const stops = day.stops.filter((s) => s.location);
   const pts: (Coordinates & { label: string; n: number | null })[] = [
     { ...base, label: baseLabel, n: null },
@@ -27,11 +29,11 @@ export function RouteSketch({ day, base, baseLabel }: { day: ItineraryDay; base:
     <figure className="overflow-hidden rounded-2xl border border-line bg-[#F7F4EC]">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Route sketch for day ${day.dayNumber}`}>
         <defs>
-          <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+          <pattern id={gridId} width="24" height="24" patternUnits="userSpaceOnUse">
             <path d="M24 0H0V24" fill="none" stroke="#E6E0D2" strokeWidth="1" />
           </pattern>
         </defs>
-        <rect width={W} height={H} fill="url(#grid)" />
+        <rect width={W} height={H} fill={`url(#${gridId})`} />
         {projected.length > 1 && <path d={path} fill="none" stroke="#1F6650" strokeWidth="2.5" strokeDasharray="6 5" strokeLinecap="round" />}
         {projected.map((p, i) =>
           p.n === null ? (

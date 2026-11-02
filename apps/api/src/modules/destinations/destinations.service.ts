@@ -48,7 +48,7 @@ export async function listDestinations(q: DestinationQuery): Promise<Destination
       if (q.tags.length && !q.tags.some((t) => d.tags.includes(t))) return false;
       if (q.region === 'domestic' && summary.international) return false;
       if (q.region === 'international' && !summary.international) return false;
-      if (month && q.climate === 'any' && d.avoidMonths.includes(month)) return false;
+      if (month && d.avoidMonths.includes(month)) return false;
       if (q.climate !== 'any') {
         const t = d.monthlyTempC[(month ?? new Date().getMonth() + 1) - 1] ?? 25;
         if (climateOf(t) !== q.climate) return false;

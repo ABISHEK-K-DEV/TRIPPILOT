@@ -11,6 +11,10 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
     return;
   }
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    res.status(409).json({ error: { code: 'CONFLICT', message: 'That record already exists' } });
+    return;
+  }
   if (err instanceof Prisma.PrismaClientInitializationError) {
     console.error('[db] connection failed:', err.message);
     res.status(503).json({ error: { code: 'DATABASE_UNAVAILABLE', message: 'The database is unavailable. Please try again shortly.' } });

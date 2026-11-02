@@ -64,7 +64,7 @@ export function DiscoverPage() {
           <div className="card space-y-4 p-5">
             <label className="block">
               <span className="mb-1.5 block text-[13px] font-semibold text-ink-soft">Search</span>
-              <input className="input" placeholder="Name, region, country…" defaultValue={get('q')} onChange={(e) => update('q', e.target.value)} />
+              <input className="input" placeholder="Name, region, country…" value={get('q')} onChange={(e) => update('q', e.target.value)} />
             </label>
             <label className="block">
               <span className="mb-1.5 block text-[13px] font-semibold text-ink-soft">Travelling from</span>

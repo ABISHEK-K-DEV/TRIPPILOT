@@ -4,7 +4,7 @@ import { formatMoney, roundEstimate } from '../src/money';
 import { addDays, addMinutesToTime, monthOf, nightsBetween, formatDuration } from '../src/time';
 import { estimateTransportOptions, pickPrimaryTransport } from '../src/transport';
 import { findOrigin } from '../src/origins';
-import { plannerRequestSchema } from '../src/schemas';
+import { destinationQuerySchema, plannerRequestSchema } from '../src/schemas';
 
 describe('geo', () => {
   it('computes Delhi → Mumbai distance', () => {
@@ -88,5 +88,28 @@ describe('plannerRequestSchema', () => {
   });
   it('rejects overly long trips', () => {
     expect(plannerRequestSchema.safeParse({ ...ok, endDate: '2027-02-15' }).success).toBe(false);
+  });
+});
+
+describe('regressions', () => {
+  it('rejects impossible calendar dates instead of rolling them over', () => {
+    expect(() => nightsBetween('2026-02-27', '2026-02-30')).toThrow();
+    expect(() => nightsBetween('2027-02-29', '2027-03-02')).toThrow(); // not a leap year
+    expect(nightsBetween('2028-02-29', '2028-03-02')).toBe(2);
+  });
+  it('treats the string "false" as false', () => {
+    const base = { origin: 'DEL', startDate: '2026-12-01', endDate: '2026-12-03', adults: 1 };
+    expect(plannerRequestSchema.parse({ ...base, includeInsurance: 'false' }).includeInsurance).toBe(false);
+    expect(plannerRequestSchema.parse({ ...base, includeInsurance: false }).includeInsurance).toBe(false);
+    expect(plannerRequestSchema.parse(base).includeInsurance).toBe(true);
+    expect(plannerRequestSchema.safeParse({ ...base, includeInsurance: 'maybe' }).success).toBe(false);
+  });
+});
+
+describe('destinationQuerySchema', () => {
+  it('parses weekend flags correctly', () => {
+    expect(destinationQuerySchema.parse({ weekend: 'false' }).weekend).toBe(false);
+    expect(destinationQuerySchema.parse({ weekend: 'true' }).weekend).toBe(true);
+    expect(destinationQuerySchema.parse({}).weekend).toBeUndefined();
   });
 });

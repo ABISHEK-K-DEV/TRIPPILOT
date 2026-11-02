@@ -173,7 +173,7 @@ export async function generatePlan(req: PlannerRequest): Promise<PlanResult> {
   if (nights + 1 < destination.idealDaysMin) warnings.push(`${destination.name} is best enjoyed over at least ${destination.idealDaysMin} days.`);
   if (/altitude/i.test(destination.accessibilityNotes)) warnings.push('High altitude: keep the first day free to acclimatise and avoid strenuous activity.');
   if (international && profile.visaFeePerPerson > 0) warnings.push('Visa fees are included as an estimate. Apply only through official government portals.');
-  if (transport && transport.mode === 'flight' && transport.stops > 0) warnings.push('The budget scenario assumes a connecting flight; layovers add travel time.');
+  if (transport && transport.mode === 'flight' && transport.stops > 0) warnings.push('This estimate assumes a connecting flight; layovers add travel time.');
   feasibility.filter((f) => f.severity === 'error').forEach((f) => warnings.push(`Day ${f.dayNumber}: ${f.message}`));
   if (cost.budget.status === 'over') {
     const cheaper = alternatives.find((a) => a.withinBudget);

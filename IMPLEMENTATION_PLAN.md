@@ -23,7 +23,7 @@ Legend: ✅ done · 🟡 partial / scaffolded · ⬜ not started
 | Alternative destinations | ✅ | |
 | Save, list, view and delete trips | ✅ | The server re-generates the plan; client snapshots are never trusted |
 | Responsive design, loading/error/empty states | ✅ | Checked at 390 px and 1440 px |
-| Tests for important calculations | ✅ | 262 tests |
+| Tests for important calculations | ✅ | 270 tests |
 | README, environment docs and architecture doc | ✅ | |
 | Admin dashboard | ⬜ | Moved to Milestone 4 (role and guard already exist: `requireAdmin`) |
 | User profile page | ⬜ | Milestone 4 (the `UserPreferences` model exists) |

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { nightsBetween } from './time';
 
+/** Accepts real booleans and the strings "true"/"false"/"1"/"0" (z.coerce.boolean treats "false" as true). */
+const boolish = z.union([z.boolean(), z.enum(['true', 'false', '1', '0'])]).transform((v) => v === true || v === 'true' || v === '1');
+
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 
 export const registerSchema = z.object({
@@ -38,7 +41,7 @@ export const plannerRequestSchema = z
     tier: z.enum(['budget', 'standard', 'premium']).default('standard'),
     pace: z.enum(['relaxed', 'balanced', 'packed']).default('balanced'),
     interests: z.array(z.string().max(30)).max(10).default([]),
-    includeInsurance: z.coerce.boolean().default(true),
+    includeInsurance: boolish.default(true),
   })
   .superRefine((v, ctx) => {
     let nights: number;
@@ -69,7 +72,7 @@ export const destinationQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(30).optional(),
   accessibility: z.enum(['any', 'good', 'moderate']).default('any'),
   origin: z.string().length(3).optional(),
-  weekend: z.coerce.boolean().optional(),
+  weekend: boolish.optional(),
   sort: z.enum(['recommended', 'cost_asc', 'cost_desc', 'distance']).default('recommended'),
 });
 export type DestinationQuery = z.infer<typeof destinationQuerySchema>;

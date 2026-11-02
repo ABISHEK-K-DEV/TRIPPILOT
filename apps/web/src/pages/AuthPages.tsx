@@ -7,8 +7,9 @@ import { Button } from '../components/ui/Button';
 import { Field } from '../components/ui/Field';
 import { Postcard } from '../components/Postcard';
 
-function safeNext(next: string | null) {
-  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/trips';
+/** Only allow same-site relative paths after sign-in (blocks //evil.com and /\evil.com). */
+export function safeNext(next: string | null) {
+  return next && /^\/(?![/\\])/.test(next) ? next : '/trips';
 }
 
 function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer: ReactNode }) {
