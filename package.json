@@ -1,0 +1,21 @@
+{
+  "name": "trippilot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TripPilot — AI-powered travel intelligence platform",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,cyan \"npm run dev -w @trippilot/api\" \"npm run dev -w @trippilot/web\"",
+    "build": "npm run build -w @trippilot/api && npm run build -w @trippilot/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "npm run db:migrate -w @trippilot/api",
+    "db:seed": "npm run db:seed -w @trippilot/api",
+    "db:setup": "npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "~5.8.3"
+  }
+}

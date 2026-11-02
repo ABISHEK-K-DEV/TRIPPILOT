@@ -1,0 +1,716 @@
+// TripPilot data model
+// Conventions
+//  • Money: Decimal(14,2) + ISO-4217 `currency` column on every monetary row.
+//  • Time: timestamps stored in UTC (timestamptz); local wall-clock context is
+//    carried by IANA `timeZone` columns on destinations, users and itineraries.
+//  • Price provenance: every price row records `confidence`, `providerId` and
+//    `observedAt` / `expiresAt` so the UI can never show stale or estimated
+//    prices as verified.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum ComfortTier {
+  BUDGET
+  STANDARD
+  PREMIUM
+}
+
+enum TravelPace {
+  RELAXED
+  BALANCED
+  PACKED
+}
+
+enum PriceConfidence {
+  VERIFIED // from an authorised provider within freshness window
+  ESTIMATE // computed by TripPilot
+  SAMPLE // illustrative sample data
+}
+
+enum TripStatus {
+  DRAFT
+  PLANNED
+  BOOKED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum TripMemberRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum ExpenseCategory {
+  TRANSPORT
+  ACCOMMODATION
+  LOCAL_TRANSPORT
+  FOOD
+  ACTIVITIES
+  VISA
+  INSURANCE
+  TAXES_FEES
+  SHOPPING
+  OTHER
+}
+
+enum ActivityKind {
+  ARRIVAL
+  ATTRACTION
+  MEAL
+  FREE_TIME
+  TRANSFER
+  DEPARTURE
+}
+
+enum ProviderKind {
+  FLIGHT
+  HOTEL
+  ACTIVITY
+  INSURANCE
+  FX
+  WEATHER
+  MAPS
+}
+
+enum BookingStatus {
+  // A booking is only CONFIRMED when the booking provider confirms it.
+  SAVED_REFERENCE // user-entered reference, unverified
+  PENDING
+  CONFIRMED
+  CANCELLED
+  FAILED
+}
+
+enum DocumentType {
+  PASSPORT
+  VISA
+  FLIGHT_TICKET
+  HOTEL_CONFIRMATION
+  INSURANCE
+  ID_CARD
+  OTHER
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  READ
+  FAILED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+  ONE_TIME
+}
+
+// ─────────────────────────────── Identity ───────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  name            String
+  homeCity        String?
+  homeAirport     String? // IATA
+  countryCode     String    @default("IN") @db.Char(2)
+  defaultCurrency String    @default("INR") @db.Char(3)
+  locale          String    @default("en-IN")
+  timeZone        String    @default("Asia/Kolkata")
+  role            UserRole  @default(USER)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  preferences     UserPreferences?
+  trips           Trip[]           @relation("TripOwner")
+  memberships     TripMember[]
+  expensesPaid    TripExpense[]    @relation("ExpensePaidBy")
+  sharedExpenses  SharedExpense[]
+  bookings        Booking[]
+  documents       Document[]
+  notifications   Notification[]
+  conversations   AIConversation[]
+  subscription    UserSubscription?
+  priceAlerts     PriceAlert[]
+  votes           TripVote[]
+
+  @@map("users")
+}
+
+model UserPreferences {
+  id                 String       @id @default(cuid())
+  userId             String       @unique
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultTier        ComfortTier  @default(STANDARD)
+  defaultPace        TravelPace   @default(BALANCED)
+  interests          String[]
+  dietary            String[]
+  accessibilityNeeds String[]
+  preferredAirlines  String[]
+  avoidRedEyeFlights Boolean      @default(false)
+  maxLayovers        Int          @default(1)
+  marketingOptIn     Boolean      @default(false)
+  notifyPriceAlerts  Boolean      @default(true)
+  notifyReminders    Boolean      @default(true)
+  updatedAt          DateTime     @updatedAt
+
+  @@map("user_preferences")
+}
+
+// ─────────────────────────────── Geography & content ───────────────────────────────
+
+model Country {
+  code               String        @id @db.Char(2) // ISO-3166 alpha-2
+  name               String
+  flag               String
+  currency           String        @db.Char(3)
+  continent          String
+  callingCode        String?
+  // Entry requirements for Indian passport holders in the launch market;
+  // generalised to a per-nationality table when expanding globally.
+  visaRequirementIN  String?
+  visaFeeIN          Decimal?      @db.Decimal(14, 2)
+  visaFeeCurrency    String?       @db.Char(3)
+  visaInfoUpdatedAt  DateTime?
+  destinations       Destination[]
+
+  @@map("countries")
+}
+
+model Destination {
+  id                 String          @id @default(cuid())
+  slug               String          @unique
+  name               String
+  region             String // state / province
+  countryCode        String          @db.Char(2)
+  country            Country         @relation(fields: [countryCode], references: [code])
+  tagline            String
+  description        String
+  lat                Float
+  lng                Float
+  gatewayAirport     String? // IATA
+  timeZone           String
+  languages          String[]
+  tags               String[]
+  bestMonths         Int[]
+  peakMonths         Int[]
+  avoidMonths        Int[]
+  monthlyTempC       Int[] // 12 values, average daytime high
+  idealDaysMin       Int
+  idealDaysMax       Int
+  accessibility      String // good | moderate | limited
+  accessibilityNotes String
+  scene              String // visual motif for generated artwork
+  palette            String[]
+  imageUrl           String? // licensed imagery (optional)
+  // Cost profile (per-tier typical prices) — currency is `costCurrency`
+  costCurrency       String          @default("INR") @db.Char(3)
+  costProfile        Json
+  dataConfidence     PriceConfidence @default(SAMPLE)
+  dataSource         String
+  dataUpdatedAt      DateTime        @default(now())
+  isPublished        Boolean         @default(true)
+  popularity         Int             @default(0)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  attractions        Attraction[]
+  trips              Trip[]
+  hotelOptions       HotelOption[]
+  priceObservations  PriceObservation[]
+
+  @@index([countryCode])
+  @@index([tags], type: Gin)
+  @@map("destinations")
+}
+
+model Attraction {
+  id              String          @id @default(cuid())
+  destinationId   String
+  destination     Destination     @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  name            String
+  description     String
+  category        String
+  tags            String[]
+  area            String
+  lat             Float
+  lng             Float
+  durationMinutes Int
+  bestTime        String          @default("any") // morning | afternoon | evening | any
+  sortOrder       Int             @default(0) // editorial order: headline sights first
+  openingHours    Json?
+  priceAmount     Decimal         @default(0) @db.Decimal(14, 2)
+  priceCurrency   String          @default("INR") @db.Char(3)
+  priceConfidence PriceConfidence @default(SAMPLE)
+  rating          Float? // only when sourced from a provider
+  ratingSource    String?
+  isSponsored     Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  itineraryItems  ItineraryActivity[]
+
+  @@index([destinationId, sortOrder])
+  @@map("attractions")
+}
+
+// ─────────────────────────────── Trips & itineraries ───────────────────────────────
+
+model Trip {
+  id               String        @id @default(cuid())
+  ownerId          String
+  owner            User          @relation("TripOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  destinationId    String?
+  destination      Destination?  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  title            String
+  originCode       String
+  startDate        DateTime      @db.Date
+  endDate          DateTime      @db.Date
+  adults           Int
+  children         Int           @default(0)
+  tier             ComfortTier
+  pace             TravelPace
+  interests        String[]
+  budgetAmount     Decimal?      @db.Decimal(14, 2)
+  currency         String        @default("INR") @db.Char(3)
+  estimatedTotal   Decimal?      @db.Decimal(14, 2)
+  status           TripStatus    @default(PLANNED)
+  shareToken       String?       @unique
+  // Immutable snapshot of the generated plan (request, cost breakdown, sources)
+  planRequest      Json
+  planSnapshot     Json
+  generator        String
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  members          TripMember[]
+  itineraries      Itinerary[]
+  flightOptions    FlightOption[]
+  hotelOptions     HotelOption[]
+  expenses         TripExpense[]
+  bookings         Booking[]
+  documents        Document[]
+  conversations    AIConversation[]
+  votes            TripVote[]
+  checklistItems   ChecklistItem[]
+
+  @@index([ownerId])
+  @@map("trips")
+}
+
+model TripMember {
+  id         String         @id @default(cuid())
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviteEmail String?
+  role       TripMemberRole @default(VIEWER)
+  status     InviteStatus   @default(PENDING)
+  joinedAt   DateTime?
+  createdAt  DateTime       @default(now())
+
+  @@unique([tripId, userId])
+  @@map("trip_members")
+}
+
+model Itinerary {
+  id         String              @id @default(cuid())
+  tripId     String
+  trip       Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  version    Int                 @default(1)
+  isActive   Boolean             @default(true)
+  timeZone   String
+  generator  String
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  activities ItineraryActivity[]
+
+  @@unique([tripId, version])
+  @@map("itineraries")
+}
+
+model ItineraryActivity {
+  id                   String          @id @default(cuid())
+  itineraryId          String
+  itinerary            Itinerary       @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  attractionId         String?
+  attraction           Attraction?     @relation(fields: [attractionId], references: [id], onDelete: SetNull)
+  dayNumber            Int
+  position             Int
+  kind                 ActivityKind
+  title                String
+  notes                String?
+  localDate            DateTime        @db.Date
+  startTime            String // HH:MM in itinerary time zone
+  durationMinutes      Int
+  travelMinutesBefore  Int             @default(0)
+  lat                  Float?
+  lng                  Float?
+  costAmount           Decimal         @default(0) @db.Decimal(14, 2)
+  costCurrency         String          @default("INR") @db.Char(3)
+  costConfidence       PriceConfidence @default(ESTIMATE)
+
+  @@index([itineraryId, dayNumber, position])
+  @@map("itinerary_activities")
+}
+
+// ─────────────────────────────── Providers & prices ───────────────────────────────
+
+model TravelProvider {
+  id                String          @id @default(cuid())
+  slug              String          @unique
+  name              String
+  kind              ProviderKind
+  isActive          Boolean         @default(true)
+  isAffiliate       Boolean         @default(false)
+  affiliateNetwork  String?
+  commissionPct     Decimal?        @db.Decimal(5, 2)
+  freshnessMinutes  Int             @default(30) // how long a price stays "verified"
+  termsUrl          String?
+  createdAt         DateTime        @default(now())
+
+  flightOptions     FlightOption[]
+  hotelOptions      HotelOption[]
+  observations      PriceObservation[]
+  bookings          Booking[]
+
+  @@map("travel_providers")
+}
+
+model FlightOption {
+  id                  String          @id @default(cuid())
+  tripId              String?
+  trip                Trip?           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  providerId          String?
+  provider            TravelProvider? @relation(fields: [providerId], references: [id])
+  providerOfferId     String?
+  airlineCodes        String[]
+  originCode          String
+  destinationCode     String
+  departAt            DateTime // UTC
+  arriveAt            DateTime // UTC
+  departTimeZone      String
+  arriveTimeZone      String
+  stops               Int
+  layovers            Json? // [{ airport, minutes }]
+  cabin               String          @default("economy")
+  baggage             Json? // { cabinKg, checkedKg, pieces }
+  cancellationPolicy  String?
+  changePolicy        String?
+  seatSelectionFee    Decimal?        @db.Decimal(14, 2)
+  baseFare            Decimal         @db.Decimal(14, 2)
+  taxesAndFees        Decimal         @db.Decimal(14, 2)
+  extraCharges        Decimal         @default(0) @db.Decimal(14, 2)
+  totalPayable        Decimal         @db.Decimal(14, 2)
+  currency            String          @db.Char(3)
+  confidence          PriceConfidence
+  observedAt          DateTime        @default(now())
+  expiresAt           DateTime?
+  isSponsored         Boolean         @default(false)
+  deepLink            String?
+
+  @@index([tripId])
+  @@index([originCode, destinationCode, departAt])
+  @@map("flight_options")
+}
+
+model HotelOption {
+  id                  String          @id @default(cuid())
+  tripId              String?
+  trip                Trip?           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  destinationId       String?
+  destination         Destination?    @relation(fields: [destinationId], references: [id])
+  providerId          String?
+  provider            TravelProvider? @relation(fields: [providerId], references: [id])
+  providerHotelId     String?
+  name                String
+  starRating          Float?
+  guestRating         Float? // only when sourced
+  ratingSource        String?
+  lat                 Float?
+  lng                 Float?
+  area                String?
+  facilities          String[]
+  breakfastIncluded   Boolean         @default(false)
+  cancellationPolicy  String?
+  checkIn             DateTime        @db.Date
+  checkOut            DateTime        @db.Date
+  rooms               Int             @default(1)
+  nightlyRate         Decimal         @db.Decimal(14, 2)
+  taxes               Decimal         @db.Decimal(14, 2)
+  extraCharges        Decimal         @default(0) @db.Decimal(14, 2)
+  totalPayable        Decimal         @db.Decimal(14, 2)
+  currency            String          @db.Char(3)
+  confidence          PriceConfidence
+  observedAt          DateTime        @default(now())
+  expiresAt           DateTime?
+  isSponsored         Boolean         @default(false)
+  deepLink            String?
+
+  @@index([tripId])
+  @@index([destinationId])
+  @@map("hotel_options")
+}
+
+/// Append-only log of every observed price — powers freshness tracking,
+/// price history and alerts (Milestone 3).
+model PriceObservation {
+  id             String          @id @default(cuid())
+  providerId     String?
+  provider       TravelProvider? @relation(fields: [providerId], references: [id])
+  destinationId  String?
+  destination    Destination?    @relation(fields: [destinationId], references: [id])
+  kind           ProviderKind
+  subjectKey     String // e.g. "DEL-DPS:2026-12-10" or "hotel:abc123"
+  amount         Decimal         @db.Decimal(14, 2)
+  currency       String          @db.Char(3)
+  confidence     PriceConfidence
+  observedAt     DateTime        @default(now())
+  validUntil     DateTime?
+  raw            Json?
+
+  @@index([subjectKey, observedAt])
+  @@map("price_observations")
+}
+
+model PriceAlert {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectKey    String
+  targetAmount  Decimal   @db.Decimal(14, 2)
+  currency      String    @db.Char(3)
+  isActive      Boolean   @default(true)
+  lastTriggered DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@map("price_alerts")
+}
+
+// ─────────────────────────────── Money ───────────────────────────────
+
+model TripExpense {
+  id             String          @id @default(cuid())
+  tripId         String
+  trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  category       ExpenseCategory
+  label          String
+  amount         Decimal         @db.Decimal(14, 2)
+  currency       String          @db.Char(3)
+  // Amount converted to the trip currency at `fxRate` (for multi-currency trips)
+  amountInTripCurrency Decimal   @db.Decimal(14, 2)
+  fxRate         Decimal         @default(1) @db.Decimal(18, 8)
+  confidence     PriceConfidence
+  isPlanned      Boolean         @default(true) // planned estimate vs actual spend
+  isOptional     Boolean         @default(false)
+  source         String?
+  paidById       String?
+  paidBy         User?           @relation("ExpensePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  spentAt        DateTime?
+  createdAt      DateTime        @default(now())
+
+  shares         SharedExpense[]
+
+  @@index([tripId])
+  @@map("trip_expenses")
+}
+
+model SharedExpense {
+  id         String      @id @default(cuid())
+  expenseId  String
+  expense    TripExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shareAmount Decimal    @db.Decimal(14, 2)
+  isSettled  Boolean     @default(false)
+  settledAt  DateTime?
+
+  @@unique([expenseId, userId])
+  @@map("shared_expenses")
+}
+
+/// A booking is never CONFIRMED unless the booking provider confirms it.
+model Booking {
+  id                 String          @id @default(cuid())
+  userId             String
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId             String?
+  trip               Trip?           @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  providerId         String?
+  provider           TravelProvider? @relation(fields: [providerId], references: [id])
+  kind               ProviderKind
+  status             BookingStatus   @default(SAVED_REFERENCE)
+  reference          String?
+  providerConfirmedAt DateTime?
+  details            Json?
+  amount             Decimal?        @db.Decimal(14, 2)
+  currency           String?         @db.Char(3)
+  startsAt           DateTime?
+  endsAt             DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([userId])
+  @@map("bookings")
+}
+
+// ─────────────────────────────── Documents & notifications ───────────────────────────────
+
+model Document {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId       String?
+  trip         Trip?        @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  type         DocumentType
+  title        String
+  // Object-storage key in a private bucket; files are served only via
+  // short-lived signed URLs after an ownership check.
+  storageKey   String?
+  mimeType     String?
+  sizeBytes    Int?
+  checksum     String?
+  documentNumberLast4 String? // never store full passport numbers
+  issuingCountry String?     @db.Char(2)
+  expiresOn    DateTime?    @db.Date
+  remindAt     DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([userId])
+  @@map("documents")
+}
+
+model Notification {
+  id         String              @id @default(cuid())
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel    NotificationChannel
+  type       String // price_alert | passport_expiry | trip_reminder | invite | ...
+  title      String
+  body       String
+  data       Json?
+  status     NotificationStatus  @default(QUEUED)
+  scheduledFor DateTime?
+  sentAt     DateTime?
+  readAt     DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+// ─────────────────────────────── Group planning ───────────────────────────────
+
+model TripVote {
+  id         String   @id @default(cuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject    String // destination | hotel | activity
+  subjectId  String
+  value      Int // +1 / -1
+  createdAt  DateTime @default(now())
+
+  @@unique([tripId, userId, subject, subjectId])
+  @@map("trip_votes")
+}
+
+model ChecklistItem {
+  id         String    @id @default(cuid())
+  tripId     String
+  trip       Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  label      String
+  assigneeId String?
+  doneAt     DateTime?
+  position   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  @@map("checklist_items")
+}
+
+// ─────────────────────────────── AI ───────────────────────────────
+
+model AIConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripId    String?
+  trip      Trip?    @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  provider  String
+  model     String?
+  title     String?
+  messages  Json // [{ role, content, structured?, sources?, createdAt }]
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("ai_conversations")
+}
+
+// ─────────────────────────────── Monetisation ───────────────────────────────
+
+model SubscriptionPlan {
+  id            String             @id @default(cuid())
+  slug          String             @unique
+  name          String
+  description   String
+  priceAmount   Decimal            @db.Decimal(14, 2)
+  currency      String             @db.Char(3)
+  interval      BillingInterval
+  features      Json // { aiPlansPerMonth, groupMembers, priceAlerts, ... }
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  subscriptions UserSubscription[]
+
+  @@map("subscription_plans")
+}
+
+model UserSubscription {
+  id                String           @id @default(cuid())
+  userId            String           @unique
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId            String
+  plan              SubscriptionPlan @relation(fields: [planId], references: [id])
+  status            String // active | past_due | cancelled
+  currentPeriodEnd  DateTime
+  externalId        String?
+  createdAt         DateTime         @default(now())
+
+  @@map("user_subscriptions")
+}
